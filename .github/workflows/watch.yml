@@ -20,7 +20,7 @@ jobs:
 
       - name: Run watcher
         env:
-          CHANNEL_COMMUNITY_URL: ${{ vars.CHANNEL_COMMUNITY_URL }}
+          CHANNEL_COMMUNITY_URLS: ${{ vars.CHANNEL_COMMUNITY_URLS }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: python channel_watch.py
 
