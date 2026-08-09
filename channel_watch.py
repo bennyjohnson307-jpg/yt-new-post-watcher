@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Watches a YouTube channel's Community tab and alerts on a new post.
+Watches multiple YouTube channels' Community tabs and alerts on new posts.
 """
 
 import json
@@ -9,7 +9,9 @@ import re
 import sys
 import urllib.request
 
-CHANNEL_COMMUNITY_URL = os.environ["CHANNEL_COMMUNITY_URL"]
+CHANNEL_URLS = [
+    u.strip() for u in os.environ["CHANNEL_COMMUNITY_URLS"].split(",") if u.strip()
+]
 NTFY_TOPIC = os.environ["NTFY_TOPIC"]
 STATE_FILE = os.environ.get("STATE_FILE", "last_post.json")
 
@@ -46,9 +48,6 @@ def text_of(node):
 
 
 def find_newest_post(data: dict):
-    """Returns (post_id, preview_text) of the newest post specifically
-    from this channel's own Community tab feed - not sidebar suggestions
-    from other channels, which can appear elsewhere on the same page."""
     try:
         tabs = data["contents"]["twoColumnBrowseResultsRenderer"]["tabs"]
         for tab in tabs:
@@ -89,37 +88,41 @@ def notify(title: str, message: str):
     urllib.request.urlopen(req, timeout=15)
 
 
-def main():
-    html = fetch_html(CHANNEL_COMMUNITY_URL)
-    data = extract_yt_initial_data(html)
+def check_channel(channel_url: str, state: dict):
+    try:
+        html = fetch_html(channel_url)
+        data = extract_yt_initial_data(html)
+    except Exception as e:
+        print(f"[{channel_url}] fetch/parse failed: {e}")
+        return
+
     post_id, preview = find_newest_post(data)
-
     if not post_id:
-        print(
-            "Could not find this channel's own community post feed at the "
-            "expected page location. YouTube may have changed its layout - "
-            "this needs a fresh look rather than a guess."
-        )
-        sys.exit(0)
+        print(f"[{channel_url}] could not find this channel's post feed.")
+        return
 
-    state = load_state()
-    last_seen = state.get("last_post_id")
-
-    print(f"newest post id = {post_id}")
+    last_seen = state.get(channel_url)
+    print(f"[{channel_url}] newest post id = {post_id}")
 
     if last_seen is None:
-        print("First run - baseline recorded.")
+        print(f"[{channel_url}] first run - baseline recorded.")
     elif post_id != last_seen:
         link = f"https://www.youtube.com/post/{post_id}"
         notify(
             "New community post!",
-            f"{link}\n{preview}" if preview else link,
+            f"{channel_url}\n{link}\n{preview}" if preview else f"{channel_url}\n{link}",
         )
-        print("New post detected - notification sent.")
+        print(f"[{channel_url}] new post detected - notification sent.")
     else:
-        print("No new post since last check.")
+        print(f"[{channel_url}] no new post since last check.")
 
-    state["last_post_id"] = post_id
+    state[channel_url] = post_id
+
+
+def main():
+    state = load_state()
+    for channel_url in CHANNEL_URLS:
+        check_channel(channel_url, state)
     save_state(state)
 
 
