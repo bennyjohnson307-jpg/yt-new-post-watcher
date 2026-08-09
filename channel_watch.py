@@ -37,34 +37,34 @@ def extract_yt_initial_data(html: str) -> dict:
     return json.loads(m.group(1))
 
 
+def text_of(node):
+    if not node:
+        return ""
+    if "simpleText" in node:
+        return node["simpleText"]
+    return "".join(r.get("text", "") for r in node.get("runs", []))
+
+
 def find_newest_post(data: dict):
-    """Returns (post_id, preview_text) of the first community post found."""
-    result = [None, None]
-
-    def text_of(node):
-        if not node:
-            return ""
-        if "simpleText" in node:
-            return node["simpleText"]
-        return "".join(r.get("text", "") for r in node.get("runs", []))
-
-    def walk(obj):
-        if result[0]:
-            return
-        if isinstance(obj, dict):
-            post = obj.get("backstagePostRenderer")
-            if post and post.get("postId"):
-                result[0] = post["postId"]
-                result[1] = text_of(post.get("contentText"))[:200]
-                return
-            for v in obj.values():
-                walk(v)
-        elif isinstance(obj, list):
-            for v in obj:
-                walk(v)
-
-    walk(data)
-    return result[0], result[1]
+    """Returns (post_id, preview_text) of the newest post specifically
+    from this channel's own Community tab feed - not sidebar suggestions
+    from other channels, which can appear elsewhere on the same page."""
+    try:
+        tabs = data["contents"]["twoColumnBrowseResultsRenderer"]["tabs"]
+        for tab in tabs:
+            content = tab.get("tabRenderer", {}).get("content", {})
+            sections = content.get("sectionListRenderer", {}).get("contents", [])
+            for section in sections:
+                items = section.get("itemSectionRenderer", {}).get("contents", [])
+                for item in items:
+                    thread = item.get("backstagePostThreadRenderer")
+                    if thread:
+                        post = thread.get("post", {}).get("backstagePostRenderer")
+                        if post and post.get("postId"):
+                            return post["postId"], text_of(post.get("contentText"))[:200]
+    except (KeyError, TypeError, IndexError):
+        pass
+    return None, None
 
 
 def load_state():
@@ -95,7 +95,11 @@ def main():
     post_id, preview = find_newest_post(data)
 
     if not post_id:
-        print("No community post found on the page.")
+        print(
+            "Could not find this channel's own community post feed at the "
+            "expected page location. YouTube may have changed its layout - "
+            "this needs a fresh look rather than a guess."
+        )
         sys.exit(0)
 
     state = load_state()
