@@ -22,6 +22,7 @@ jobs:
         env:
           CHANNEL_COMMUNITY_URLS: ${{ vars.CHANNEL_COMMUNITY_URLS }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: python channel_watch.py
 
       - name: Save state for next run
