@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """
 Watches multiple YouTube channels' Community tabs, alerts on new posts,
-and automatically adds any newly detected post to the engagement
-watcher's list. Also tracks consecutive failures per channel and sends
-one watchdog alert if a channel stops being readable.
+and automatically keeps the engagement watcher's list in sync: when a
+channel gets a new post, this removes that same channel's previous
+post link (which it already knows precisely) and adds the new one -
+so the list never grows unbounded, and other channels'/manually-added
+links are never touched. Also tracks consecutive failures per channel
+and sends one watchdog alert if a channel stops being readable.
 """
 
 import json
@@ -113,10 +116,10 @@ def gh_api_request(url: str, method: str = "GET", body: dict = None):
         return json.loads(raw) if raw else {}
 
 
-def add_post_to_engagement_watcher(post_link: str):
-    """Fetches the current COMMUNITY_POST_URLS variable on the engagement
-    watcher repo, appends this new post if not already present, and
-    saves it back."""
+def sync_engagement_watcher(new_post_id: str, old_post_id):
+    """Removes this channel's known previous post link (if any) and
+    adds the new one - keeping the watched list from growing forever,
+    without touching other channels' or manually-added links."""
     var_url = f"https://api.github.com/repos/{ENGAGEMENT_REPO}/actions/variables/COMMUNITY_POST_URLS"
     try:
         current = gh_api_request(var_url)
@@ -125,19 +128,30 @@ def add_post_to_engagement_watcher(post_link: str):
         print(f"Could not read engagement watcher's current list: {e}")
         return False
 
-    if post_link in existing:
-        print("Post link already in engagement watcher's list.")
+    new_link = f"https://www.youtube.com/post/{new_post_id}"
+    old_link = f"https://www.youtube.com/post/{old_post_id}" if old_post_id else None
+
+    changed = False
+    if old_link and old_link in existing:
+        existing.remove(old_link)
+        print(f"Removed this channel's previous post from watch list: {old_link}")
+        changed = True
+
+    if new_link not in existing:
+        existing.append(new_link)
+        changed = True
+
+    if not changed:
+        print("Watch list already correct, no update needed.")
         return True
 
-    existing.append(post_link)
     new_value = ",".join(existing)
-
     try:
         gh_api_request(
             var_url, method="PATCH",
             body={"name": "COMMUNITY_POST_URLS", "value": new_value},
         )
-        print("Auto-added new post to engagement watcher.")
+        print("Engagement watcher's list synced successfully.")
         return True
     except Exception as e:
         print(f"Could not update engagement watcher's list: {e}")
@@ -188,7 +202,7 @@ def check_channel(channel_url: str, state: dict):
             f"{channel_url}\n{link}\n{preview}" if preview else f"{channel_url}\n{link}",
         )
         print(f"[{channel_url}] new post detected - notification sent.")
-        add_post_to_engagement_watcher(link)
+        sync_engagement_watcher(post_id, last_seen)
     else:
         print(f"[{channel_url}] no new post since last check.")
 
