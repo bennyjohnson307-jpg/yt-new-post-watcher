@@ -89,7 +89,7 @@ def save_state(state):
         json.dump(state, f, indent=2)
 
 
-def notify(title: str, message: str, priority: str = "high"):
+def notify(title: str, message: str, priority: str = "urgent"):
     req = urllib.request.Request(
         f"https://ntfy.sh/{NTFY_TOPIC}",
         data=message.encode("utf-8"),
